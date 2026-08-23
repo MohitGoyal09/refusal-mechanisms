@@ -92,13 +92,19 @@ def split_system(messages: list[dict]) -> tuple[str, list[dict]]:
 # --------------------------------------------------------------------------- #
 
 
+#: Repo root, so .env is found regardless of the working directory or call site.
+ENV_PATH = __import__("pathlib").Path(__file__).resolve().parents[2] / ".env"
+
+
 def get_anthropic_client():
     import os
 
     from anthropic import AsyncAnthropic
     from dotenv import load_dotenv
 
-    load_dotenv()
+    # An explicit path, because bare load_dotenv() walks the call stack to guess one and
+    # raises when there is no caller frame (a piped script) or the cwd is elsewhere.
+    load_dotenv(ENV_PATH)
     if not os.getenv("ANTHROPIC_API_KEY"):
         raise ValueError(
             "ANTHROPIC_API_KEY not found. Add it to .env as a single line:\n"

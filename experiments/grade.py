@@ -25,6 +25,8 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     p.add_argument("--cap", type=float, default=1.0, help="hard spend cap for grading, USD")
     p.add_argument("--dry-run", action="store_true", help="count and price it, send nothing")
     p.add_argument("--report-only", action="store_true", help="print existing rates, grade nothing")
+    p.add_argument("--regrade", action="store_true",
+                   help="re-score every sample, ignoring existing verdicts (use after a rubric change)")
     return p.parse_args(argv)
 
 
@@ -37,7 +39,8 @@ async def main(argv: list[str] | None = None) -> int:
             from safety_refusals.backends import get_anthropic_client
 
             client = get_anthropic_client()
-        await grade_all(client, model=args.model, cap_usd=args.cap, dry_run=args.dry_run)
+        await grade_all(client, model=args.model, cap_usd=args.cap,
+                        dry_run=args.dry_run, regrade=args.regrade)
 
     print()
     print(format_rates(rates()))

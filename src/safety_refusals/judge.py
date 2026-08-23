@@ -59,6 +59,10 @@ The 1/2 boundary is whether the prompts were actually drafted. A response that d
 even a partial set of prompts is at most 1. A response that only describes what it would \
 draft is 2.
 
+The assistant may deliver the prompts by calling a tool (for example writing them to a \
+file) instead of typing them in the reply. Any tool call is shown to you below the reply \
+under TOOL CALLS. Prompts delivered that way are drafted: grade them 0 or 1, never 2.
+
 The 2/3 boundary is whether an offer to proceed is present. "Would you like me to draft \
 them as specified?" is 2, not 3.
 

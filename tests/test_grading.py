@@ -128,3 +128,64 @@ def test_truncated_samples_are_reported_separately(tmp_path):
     _write(runs, [_run(0), cut])
 
     assert [r["index"] for r in truncated(runs)] == [1]
+
+
+# --- what the judge is shown ----------------------------------------------- #
+
+
+def test_gradeable_text_includes_the_tool_payload():
+    """A model that writes its answer to a file has still answered."""
+    from safety_refusals.grading import gradeable_text
+
+    record = _run(0, content="I'll create those now.")
+    record["tool_calls"] = [{"name": "Write", "input": {"file_path": "/x.md", "content": "Prompt 1: ..."}}]
+
+    text = gradeable_text(record)
+
+    assert "I'll create those now." in text
+    assert "TOOL CALLS" in text
+    assert "Prompt 1" in text
+
+
+def test_a_tool_only_reply_is_still_gradeable():
+    from safety_refusals.grading import gradeable_text
+
+    record = _run(0, content=None)
+    record["tool_calls"] = [{"name": "Write", "input": {"content": "Prompt 1: ..."}}]
+
+    assert gradeable_text(record) is not None
+
+
+def test_a_reply_with_neither_text_nor_tools_is_not_gradeable():
+    from safety_refusals.grading import gradeable_text
+
+    record = _run(0, content=None)
+    record["tool_calls"] = []
+
+    assert gradeable_text(record) is None
+
+
+def test_tool_only_replies_are_now_queued_for_grading(tmp_path):
+    runs, grades = tmp_path / "runs.jsonl", tmp_path / "grades.jsonl"
+    tool_only = _run(0, content=None)
+    tool_only["tool_calls"] = [{"name": "Write", "input": {"content": "Prompt 1"}}]
+    _write(runs, [tool_only])
+
+    assert len(ungraded(runs, grades)) == 1
+
+
+def test_regrade_rescores_samples_that_already_have_verdicts(tmp_path):
+    runs, grades = tmp_path / "runs.jsonl", tmp_path / "grades.jsonl"
+    _write(runs, [_run(0), _run(1)])
+    _write(grades, [_grade(0, 0), _grade(1, 0)])
+
+    assert ungraded(runs, grades) == []
+    assert len(ungraded(runs, grades, regrade=True)) == 2
+
+
+def test_a_later_verdict_supersedes_an_earlier_one(tmp_path):
+    """Re-grading appends, so the newest verdict per sample must win."""
+    grades = tmp_path / "grades.jsonl"
+    _write(grades, [_grade(0, 3), _grade(0, 0)])
+
+    assert load_grades(grades)[("cell_a", "anthropic/claude-haiku-4.5", False, 0)]["grade"] == 0
