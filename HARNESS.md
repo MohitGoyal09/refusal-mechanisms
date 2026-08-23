@@ -100,6 +100,20 @@ himself, and his crude recount moved the reasoning-on cells from ~40% to ~66%.
 between analyses. Hand-label about 40 responses, run `judge.agreement(human, machine)`, and
 report that agreement before reporting any refusal rate.
 
+Grading is a second pass over what is already on disk, so revising the rubric costs judge
+calls only and never new completions:
+
+```bash
+uv run experiments/grade.py --dry-run      # count and price it
+uv run experiments/grade.py --cap 1        # grade everything ungraded
+uv run experiments/grade.py --report-only  # per-cell rates, no calls
+```
+
+The report gives, per cell: n, refusal rate, the 0/1/2/3 histogram behind it, and how often
+the response asked about legitimacy, objected to the outcome, or flagged the scenario as a
+test. That last column is the direct check on upstream's finding that no sample ever
+verbalised eval awareness.
+
 ## Fabrication notice
 
 Carry this into any write-up. The SAFETY-2847 ticket, its incidents, and the "Claude
