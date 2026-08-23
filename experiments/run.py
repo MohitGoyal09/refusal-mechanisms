@@ -37,6 +37,8 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     p.add_argument("--n", type=int, default=30, help="samples per cell (tops up, never re-bills)")
     p.add_argument("--cap", type=float, default=5.0, help="hard spend cap for this run, USD")
     p.add_argument("--dry-run", action="store_true", help="plan and price it, send nothing")
+    p.add_argument("--cell", default=None,
+                   help="run only cells whose name contains this substring")
     p.add_argument("--reasoning", default="both", choices=["off", "on", "both"],
                    help="restrict to reasoning-off or reasoning-on cells. The no-reasoning "
                         "contrast is the clean one upstream, and half the price")
@@ -53,6 +55,8 @@ def select(conditions: list, reasoning: str) -> list:
 async def main(argv: list[str] | None = None) -> int:
     args = parse_args(argv)
     conditions = select(REGISTRY[args.experiment](), args.reasoning)
+    if args.cell:
+        conditions = [c for c in conditions if args.cell in c.name]
     if not conditions:
         print(f"{args.experiment} has no reasoning-{args.reasoning} cells")
         return 1
