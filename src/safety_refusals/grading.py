@@ -117,10 +117,12 @@ async def grade_all(
 
     written = 0
     unparsed = 0
+    failed: list[Exception] = []
     grades_path.parent.mkdir(parents=True, exist_ok=True)
     with grades_path.open("a") as f:
         for record, response in zip(todo, responses):
             if isinstance(response, Exception):
+                failed.append(response)
                 continue
             try:
                 verdict = parse_verdict(response.content or "")
@@ -140,6 +142,11 @@ async def grade_all(
 
     ledger.record_responses("grading", model, [r for r in responses if not isinstance(r, Exception)])
     print(f"wrote {written} verdicts, {unparsed} unparseable, {money(ledger.spent_usd)} actual")
+    if failed:
+        # Never report "wrote 0 verdicts" without saying why. That is how an out-of-credit
+        # account looked identical to a clean no-op.
+        print(f"  {len(failed)}/{len(responses)} judge calls FAILED: "
+              f"{type(failed[0]).__name__}: {str(failed[0])[:220]}")
     return written
 
 

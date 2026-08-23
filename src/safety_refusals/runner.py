@@ -13,7 +13,7 @@ from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
 
 from safety_refusals import store
-from safety_refusals.backends import BACKENDS, Completion
+from safety_refusals.backends import BACKENDS, Completion, TerminalAPIError
 from safety_refusals.budget import (
     MAX_TOKENS_CAP,
     BudgetExceeded,
@@ -143,9 +143,24 @@ async def run_cell(
     )
 
     ok = [r for r in responses if not isinstance(r, Exception)]
-    failed = len(responses) - len(ok)
-    if failed:
-        print(f"  {cond.name}: {failed}/{len(responses)} calls failed, keeping the rest")
+    errors = [r for r in responses if isinstance(r, Exception)]
+    if errors:
+        # Say what went wrong. A bare count sent the original exp3 run through four more
+        # cells without revealing that the account had simply run out of credit.
+        first = errors[0]
+        print(f"  {cond.name}: {len(errors)}/{len(responses)} calls failed: "
+              f"{type(first).__name__}: {str(first)[:220]}")
+        terminal = next((e for e in errors if isinstance(e, TerminalAPIError)), None)
+        if terminal is not None:
+            store.append([_record(cond, model, offset_i, r, backend)
+                          for offset_i, r in enumerate(ok, start=store.count_for(key, path))], path)
+            if ok:
+                ledger.record_responses(cond.name, model, ok)
+            raise TerminalAPIError(
+                f"Aborting the sweep: {terminal}. "
+                f"Nothing retryable about this, so the remaining cells would fail too. "
+                f"{len(ok)} samples from this cell were saved."
+            )
 
     offset = store.count_for(key, path)
     store.append([_record(cond, model, offset + i, r, backend) for i, r in enumerate(ok)], path)

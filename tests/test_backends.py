@@ -246,3 +246,73 @@ async def test_run_anthropic_samples_one_prompt_n_times():
 
     assert len(out) == 4
     assert len({id(r) for r in seen}) == 4
+
+
+# --- error classification -------------------------------------------------- #
+
+
+def test_rate_limits_and_server_errors_are_retryable():
+    import httpx
+    import anthropic
+
+    from safety_refusals.backends import is_retryable
+
+    request = httpx.Request("POST", "https://api.anthropic.com/v1/messages")
+    for status in (429, 500, 503):
+        error = anthropic.APIStatusError(
+            "boom", response=httpx.Response(status, request=request), body=None
+        )
+        assert is_retryable(error), f"{status} should be retryable"
+    assert is_retryable(anthropic.APIConnectionError(request=request))
+
+
+def test_a_400_is_never_retried():
+    """Out of credit, bad request, bad auth: no number of retries helps."""
+    import httpx
+    import anthropic
+
+    from safety_refusals.backends import is_retryable
+
+    request = httpx.Request("POST", "https://api.anthropic.com/v1/messages")
+    for status in (400, 401, 403, 404):
+        error = anthropic.APIStatusError(
+            "nope", response=httpx.Response(status, request=request), body=None
+        )
+        assert not is_retryable(error), f"{status} must not be retried"
+
+
+def test_an_unknown_exception_is_not_retried():
+    from safety_refusals.backends import is_retryable
+
+    assert not is_retryable(ValueError("something else entirely"))
+
+
+async def test_a_terminal_error_is_raised_once_not_retried_three_times():
+    import httpx
+    import anthropic
+
+    from safety_refusals.backends import TerminalAPIError, run_anthropic_many
+
+    attempts = []
+
+    class _FakeMessages:
+        async def create(self, **request):
+            attempts.append(1)
+            raise anthropic.APIStatusError(
+                "credit balance is too low",
+                response=httpx.Response(
+                    400, request=httpx.Request("POST", "https://api.anthropic.com/v1/messages")
+                ),
+                body=None,
+            )
+
+    class _FakeClient:
+        messages = _FakeMessages()
+
+    out = await run_anthropic_many(
+        _FakeClient(), "haiku-4.5", [[{"role": "user", "content": "x"}]]
+    )
+
+    assert len(attempts) == 1, "a 400 must be attempted exactly once"
+    assert isinstance(out[0], TerminalAPIError)
+    assert "credit balance" in str(out[0])

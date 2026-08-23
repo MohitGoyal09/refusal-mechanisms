@@ -38,6 +38,30 @@ MIN_THINKING_BUDGET = 1024
 ANSWER_HEADROOM = 2000
 #: The Anthropic API default, and the value upstream sampled at.
 DEFAULT_TEMPERATURE = 1.0
+#: How many times to retry a call that could plausibly succeed later.
+MAX_ATTEMPTS = 3
+
+
+class TerminalAPIError(RuntimeError):
+    """A failure no retry can fix: bad request, auth, permissions, out of credit.
+
+    Raised so a sweep aborts on the first one instead of grinding through every
+    remaining cell. The original run of exp3 attempted 120 more calls after the account
+    ran out of credit, reported them as "30/30 calls failed", and gave no reason.
+    """
+
+
+def is_retryable(error: BaseException) -> bool:
+    """True only for transient failures. A 400 will never succeed on retry."""
+    import anthropic
+
+    if isinstance(error, (anthropic.RateLimitError, anthropic.APIConnectionError,
+                          anthropic.APITimeoutError, anthropic.InternalServerError)):
+        return True
+    status = getattr(error, "status_code", None)
+    if status is not None:
+        return status == 429 or status >= 500
+    return False
 
 
 @dataclass(frozen=True)
@@ -194,11 +218,13 @@ async def run_anthropic_many(
 
     async def one(request: dict) -> Completion:
         async with semaphore:
-            for attempt in range(3):
+            for attempt in range(MAX_ATTEMPTS):
                 try:
                     return _from_anthropic(await client.messages.create(**request))
-                except Exception:
-                    if attempt == 2:
+                except BaseException as error:
+                    if not is_retryable(error):
+                        raise TerminalAPIError(f"{type(error).__name__}: {error}") from error
+                    if attempt == MAX_ATTEMPTS - 1:
                         raise
                     await asyncio.sleep(2**attempt)
             raise AssertionError("unreachable")

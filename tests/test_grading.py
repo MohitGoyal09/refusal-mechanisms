@@ -204,3 +204,28 @@ def test_the_rates_table_names_the_model(tmp_path):
 
     assert "haiku-4.5" in out
     assert "opus-4.5" in out
+
+
+async def test_failed_judge_calls_are_reported_not_silently_dropped(tmp_path, capsys):
+    """"wrote 0 verdicts" must never be indistinguishable from a clean no-op."""
+    from safety_refusals.backends import TerminalAPIError
+    from safety_refusals.grading import grade_all
+
+    runs, grades = tmp_path / "runs.jsonl", tmp_path / "grades.jsonl"
+    _write(runs, [_run(0), _run(1)])
+
+    async def _all_fail(client, model, messages_list, **kw):
+        return [TerminalAPIError("credit balance is too low") for _ in messages_list]
+
+    import safety_refusals.backends as backends
+    original = backends.run_anthropic_many
+    backends.run_anthropic_many = _all_fail
+    try:
+        written = await grade_all(None, cap_usd=1.0, runs_path=runs, grades_path=grades)
+    finally:
+        backends.run_anthropic_many = original
+
+    out = capsys.readouterr().out
+    assert written == 0
+    assert "FAILED" in out
+    assert "credit balance" in out
