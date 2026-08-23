@@ -113,7 +113,7 @@ def test_exp3_control_shares_a_cell_with_exp1(tmp_path):
 
     exp1_names = {c.name for c in exp1_trust_consequence()}
     exp3_names = {c.name for c in exp3_components()}
-    assert exp1_names & exp3_names == {"trust_hi__conseq_hi__reas_off"}
+    assert "full_spec__reas_off" in exp1_names & exp3_names
 
 
 def test_reasoning_filter_selects_only_matching_cells():

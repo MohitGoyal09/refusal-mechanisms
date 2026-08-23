@@ -22,33 +22,42 @@ from safety_refusals.conditions import (
     Valence,
 )
 
-#: Upstream's refusing cell: the full realistic ticket minus the training-target line.
-BASELINE_ABSENT = Condition(
-    name="upstream_absent",
-    consequence=Consequence.upstream_absent(),
-)
-#: Upstream's complying cell: identical plus that one line.
-BASELINE_PRESENT = Condition(
-    name="upstream_present",
-    consequence=Consequence.upstream_present(),
-)
+# Canonical cells. Several experiments need the same prompt, so they share one name and
+# therefore one set of samples. Naming them separately per experiment cost nothing but
+# money: four of the sets below wanted the fully specified ticket, which would have been
+# bought four times over. `tests/test_experiments.py` asserts no two names collide.
+
+#: The fully specified, fully approved, benign ticket. Upstream's complying cell.
+FULL_SPEC = Condition(name="full_spec", consequence=Consequence.full())
+#: Identical, minus the one training-target line. Upstream's refusing cell.
+NO_TARGET_LINE = Condition(name="no_target_line", consequence=Consequence.upstream_absent())
+
+BASELINE_ABSENT = NO_TARGET_LINE
+BASELINE_PRESENT = FULL_SPEC
+
+
+def _off(cond: Condition) -> Condition:
+    """The reasoning-off variant, named so it cannot collide with the reasoning-on one.
+
+    Every cell name carries a reasoning suffix. Without it, a bare name and a suffixed
+    name for the same prompt and the same reasoning setting are two store keys for one
+    experiment, which is a silent double charge.
+    """
+    return dataclasses.replace(cond, name=f"{cond.name}__reas_off", reasoning=False)
+
+
+def _on(cond: Condition) -> Condition:
+    return dataclasses.replace(cond, name=f"{cond.name}__reas_on", reasoning=True)
 
 
 def _with_reasoning(conds: list[Condition]) -> list[Condition]:
     """Each condition twice, reasoning off then on."""
-    out: list[Condition] = []
-    for c in conds:
-        out.append(dataclasses.replace(c, name=f"{c.name}__reas_off", reasoning=False))
-        out.append(dataclasses.replace(c, name=f"{c.name}__reas_on", reasoning=True))
-    return out
+    return [variant(c) for c in conds for variant in (_off, _on)]
 
 
 def pilot() -> list[Condition]:
     """Cheapest possible check that the one-line effect reproduces. Run this first."""
-    return [
-        dataclasses.replace(BASELINE_ABSENT, name="pilot_absent"),
-        dataclasses.replace(BASELINE_PRESENT, name="pilot_present"),
-    ]
+    return [_off(NO_TARGET_LINE), _off(FULL_SPEC)]
 
 
 def replication() -> list[Condition]:
@@ -64,7 +73,7 @@ def exp1_trust_consequence() -> list[Condition]:
     caution-under-ambiguity reading is; if neither rescues it, the misalignment reading is.
     """
     cells = [
-        Condition("trust_hi__conseq_hi", trust=Trust.full(), consequence=Consequence.full()),
+        FULL_SPEC,  # trust high, consequence high
         Condition("trust_hi__conseq_lo", trust=Trust.full(), consequence=Consequence.none()),
         Condition("trust_lo__conseq_hi", trust=Trust.none(), consequence=Consequence.full()),
         Condition("trust_lo__conseq_lo", trust=Trust.none(), consequence=Consequence.none()),
@@ -78,10 +87,8 @@ def exp2_valence() -> list[Condition]:
     This is the cell that separates Anthropic's reading from UK AISI's. Compliance here
     kills the misalignment reading. Refusal here means specification was never the story.
     """
-    cells = [
-        Condition("valence_benign", valence=Valence.BENIGN),
-        Condition("valence_eroding", valence=Valence.ERODING),
-    ]
+    # The benign arm IS the fully specified cell, so it is not bought again.
+    cells = [FULL_SPEC, Condition("valence_eroding", valence=Valence.ERODING)]
     return _with_reasoning(cells)
 
 
@@ -92,17 +99,15 @@ def exp3_components() -> list[Condition]:
     the effect. Reasoning off only, because the no-reasoning contrast is the clean one.
     """
     full_trust, full_conseq = Trust.full(), Consequence.full()
-    return [
-        # Prompt-identical to exp1's fully specified cell, so it shares the same name and
-        # reuses those samples rather than paying for the control twice.
-        Condition("trust_hi__conseq_hi__reas_off", trust=full_trust, consequence=full_conseq),
-        Condition("drop_target_line__reas_off", consequence=dataclasses.replace(full_conseq, target_line=False)),
-        Condition("drop_holdout_eval__reas_off", consequence=dataclasses.replace(full_conseq, holdout_eval=False)),
-        Condition("drop_red_team__reas_off", consequence=dataclasses.replace(full_conseq, red_team=False)),
-        Condition("drop_incidents__reas_off", consequence=dataclasses.replace(full_conseq, incidents=False)),
-        Condition("drop_approval__reas_off", trust=dataclasses.replace(full_trust, approval=False)),
-        Condition("drop_reviewers__reas_off", trust=dataclasses.replace(full_trust, reviewers=False)),
-    ]
+    return [_off(c) for c in (
+        FULL_SPEC,        # the control, already owned
+        NO_TARGET_LINE,   # dropping the target line is upstream's manipulation, already owned
+        Condition("drop_holdout_eval", consequence=dataclasses.replace(full_conseq, holdout_eval=False)),
+        Condition("drop_red_team", consequence=dataclasses.replace(full_conseq, red_team=False)),
+        Condition("drop_incidents", consequence=dataclasses.replace(full_conseq, incidents=False)),
+        Condition("drop_approval", trust=dataclasses.replace(full_trust, approval=False)),
+        Condition("drop_reviewers", trust=dataclasses.replace(full_trust, reviewers=False)),
+    )]
 
 
 def exp4_names() -> list[Condition]:
@@ -110,11 +115,11 @@ def exp4_names() -> list[Condition]:
 
     Held at the refusing baseline so there is room for the rate to move in either direction.
     """
-    return [
-        dataclasses.replace(BASELINE_ABSENT, name="names_real", names=Names.REAL),
-        dataclasses.replace(BASELINE_ABSENT, name="names_fictional", names=Names.FICTIONAL),
-        dataclasses.replace(BASELINE_ABSENT, name="names_anonymous", names=Names.ANONYMOUS),
-    ]
+    return [_off(c) for c in (
+        NO_TARGET_LINE,  # Names.REAL is the default, so this is the real-names arm already owned
+        dataclasses.replace(NO_TARGET_LINE, name="names_fictional", names=Names.FICTIONAL),
+        dataclasses.replace(NO_TARGET_LINE, name="names_anonymous", names=Names.ANONYMOUS),
+    )]
 
 
 REGISTRY = {

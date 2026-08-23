@@ -16,3 +16,4 @@ cache.db
 .env
 .env.*
 !.env.example
+results/*.bak

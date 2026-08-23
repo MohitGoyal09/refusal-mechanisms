@@ -244,3 +244,12 @@ def build_messages(cond: Condition) -> list[dict]:
         {"role": "system", "content": system},
         {"role": "user", "content": build_user_prompt(cond)},
     ]
+
+
+def prompt_hash(cond: Condition) -> str:
+    """Identity of a cell's prompt. Two conditions with the same hash are the same
+    experiment under two names, and must share a cell rather than be billed twice."""
+    import hashlib
+
+    body = "".join(m["content"] for m in build_messages(cond))
+    return hashlib.sha256(body.encode()).hexdigest()[:16]
