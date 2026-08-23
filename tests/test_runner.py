@@ -114,3 +114,30 @@ def test_exp3_control_shares_a_cell_with_exp1(tmp_path):
     exp1_names = {c.name for c in exp1_trust_consequence()}
     exp3_names = {c.name for c in exp3_components()}
     assert exp1_names & exp3_names == {"trust_hi__conseq_hi__reas_off"}
+
+
+def test_reasoning_filter_selects_only_matching_cells():
+    import sys
+    sys.path.insert(0, "experiments")
+    from run import select
+
+    from safety_refusals.experiments import exp1_trust_consequence
+
+    cells = exp1_trust_consequence()
+    off = select(cells, "off")
+    on = select(cells, "on")
+
+    assert len(off) == 4 and all(not c.reasoning for c in off)
+    assert len(on) == 4 and all(c.reasoning for c in on)
+    assert len(select(cells, "both")) == 8
+
+
+def test_reasoning_filter_can_empty_a_set():
+    import sys
+    sys.path.insert(0, "experiments")
+    from run import select
+
+    from safety_refusals.experiments import exp3_components
+
+    # exp3 is reasoning-off only by design
+    assert select(exp3_components(), "on") == []

@@ -37,12 +37,25 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     p.add_argument("--n", type=int, default=30, help="samples per cell (tops up, never re-bills)")
     p.add_argument("--cap", type=float, default=5.0, help="hard spend cap for this run, USD")
     p.add_argument("--dry-run", action="store_true", help="plan and price it, send nothing")
+    p.add_argument("--reasoning", default="both", choices=["off", "on", "both"],
+                   help="restrict to reasoning-off or reasoning-on cells. The no-reasoning "
+                        "contrast is the clean one upstream, and half the price")
     return p.parse_args(argv)
+
+
+def select(conditions: list, reasoning: str) -> list:
+    if reasoning == "both":
+        return conditions
+    want = reasoning == "on"
+    return [c for c in conditions if c.reasoning is want]
 
 
 async def main(argv: list[str] | None = None) -> int:
     args = parse_args(argv)
-    conditions = REGISTRY[args.experiment]()
+    conditions = select(REGISTRY[args.experiment](), args.reasoning)
+    if not conditions:
+        print(f"{args.experiment} has no reasoning-{args.reasoning} cells")
+        return 1
 
     if args.dry_run:
         plans = plan_matrix(conditions, args.model, args.n)
