@@ -95,7 +95,7 @@ async def grade_all(
     regrade: bool = False,
 ) -> int:
     """Grade every ungraded sample. Returns how many verdicts were written."""
-    from safety_refusals.backends import run_anthropic
+    from safety_refusals.backends import run_anthropic_many
 
     todo = ungraded(runs_path, grades_path, regrade=regrade)
     if not todo:
@@ -109,15 +109,11 @@ async def grade_all(
     if dry_run:
         return 0
 
-    responses = []
-    for record in todo:
-        responses.extend(
-            await run_anthropic(
-                client, model, judge_messages(gradeable_text(record)), 1,
-                max_tokens=1000, temperature=0.0, reasoning=False,
-                max_concurrent=max_concurrent,
-            )
-        )
+    responses = await run_anthropic_many(
+        client, model, [judge_messages(gradeable_text(r)) for r in todo],
+        max_tokens=1000, temperature=0.0, reasoning=False,
+        max_concurrent=max_concurrent,
+    )
 
     written = 0
     unparsed = 0

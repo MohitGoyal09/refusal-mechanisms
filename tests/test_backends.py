@@ -202,3 +202,47 @@ def test_the_system_prompt_is_a_parameter_not_a_message():
 
     assert "Claude Internal" in request["system"]
     assert all(m["role"] != "system" for m in request["messages"])
+
+
+async def test_run_anthropic_many_preserves_order_and_runs_concurrently():
+    """Verdicts are zipped back onto records by position, so order cannot drift."""
+    import asyncio
+
+    from safety_refusals.backends import run_anthropic_many
+
+    started = []
+
+    class _FakeMessages:
+        async def create(self, **request):
+            marker = request["messages"][0]["content"]
+            started.append(marker)
+            await asyncio.sleep(0.02 if marker == "a" else 0)  # finish out of order
+            return _Message([_Block("text", text=marker.upper())], "end_turn", _Usage(1, 1))
+
+    class _FakeClient:
+        messages = _FakeMessages()
+
+    prompts = [[{"role": "user", "content": c}] for c in ("a", "b", "c")]
+    out = await run_anthropic_many(_FakeClient(), "haiku-4.5", prompts, max_concurrent=3)
+
+    assert [c.content for c in out] == ["A", "B", "C"]   # order by input, not completion
+    assert started == ["a", "b", "c"]                     # all dispatched before any finished
+
+
+async def test_run_anthropic_samples_one_prompt_n_times():
+    from safety_refusals.backends import run_anthropic
+
+    seen = []
+
+    class _FakeMessages:
+        async def create(self, **request):
+            seen.append(request)
+            return _Message([_Block("text", text="ok")], "end_turn", _Usage(1, 1))
+
+    class _FakeClient:
+        messages = _FakeMessages()
+
+    out = await run_anthropic(_FakeClient(), "haiku-4.5", [{"role": "user", "content": "x"}], 4)
+
+    assert len(out) == 4
+    assert len({id(r) for r in seen}) == 4

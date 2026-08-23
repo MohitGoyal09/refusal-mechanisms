@@ -167,6 +167,45 @@ def build_anthropic_request(
     return request
 
 
+async def run_anthropic_many(
+    client,
+    model: str,
+    messages_list: list[list[dict]],
+    *,
+    tools: list[dict] | None = None,
+    max_tokens: int = 4000,
+    temperature: float = DEFAULT_TEMPERATURE,
+    reasoning: bool = False,
+    max_concurrent: int = 8,
+) -> list[Completion | Exception]:
+    """Run a list of DIFFERENT prompts concurrently. Order is preserved.
+
+    Grading needs this: one judge call per stored response. Looping and awaiting each in
+    turn made a 120-sample grading pass take as long as 120 round trips instead of 15.
+    """
+    requests = [
+        build_anthropic_request(
+            model, messages, tools=tools, max_tokens=max_tokens,
+            temperature=temperature, reasoning=reasoning,
+        )
+        for messages in messages_list
+    ]
+    semaphore = asyncio.Semaphore(max_concurrent)
+
+    async def one(request: dict) -> Completion:
+        async with semaphore:
+            for attempt in range(3):
+                try:
+                    return _from_anthropic(await client.messages.create(**request))
+                except Exception:
+                    if attempt == 2:
+                        raise
+                    await asyncio.sleep(2**attempt)
+            raise AssertionError("unreachable")
+
+    return await asyncio.gather(*[one(r) for r in requests], return_exceptions=True)
+
+
 async def run_anthropic(
     client,
     model: str,
@@ -180,24 +219,10 @@ async def run_anthropic(
     max_concurrent: int = 8,
 ) -> list[Completion | Exception]:
     """Sample the same prompt n times through the native Messages API."""
-    request = build_anthropic_request(
-        model, messages, tools=tools, max_tokens=max_tokens,
-        temperature=temperature, reasoning=reasoning,
+    return await run_anthropic_many(
+        client, model, [messages] * n, tools=tools, max_tokens=max_tokens,
+        temperature=temperature, reasoning=reasoning, max_concurrent=max_concurrent,
     )
-    semaphore = asyncio.Semaphore(max_concurrent)
-
-    async def one() -> Completion:
-        async with semaphore:
-            for attempt in range(3):
-                try:
-                    return _from_anthropic(await client.messages.create(**request))
-                except Exception:
-                    if attempt == 2:
-                        raise
-                    await asyncio.sleep(2**attempt)
-            raise AssertionError("unreachable")
-
-    return await asyncio.gather(*[one() for _ in range(n)], return_exceptions=True)
 
 
 # --------------------------------------------------------------------------- #
