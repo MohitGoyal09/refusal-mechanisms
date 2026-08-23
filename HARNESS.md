@@ -44,14 +44,44 @@ The two upstream cells differ by exactly one line, asserted separately.
 
 Three, because the upstream default `max_tokens=16000` is a roughly six-fold cost tail:
 
-1. **`MAX_TOKENS_CAP = 4000`.** `run_cell` raises if you pass more. Raise the constant
-   deliberately if you mean it.
+1. **A hard output ceiling of 8000, defaulting to 4000 for reasoning-off cells.**
+   `run_cell` raises above the ceiling. Upstream's default is 16000.
 2. **`Ledger`.** Every batch is priced before it is sent and charged against a session cap.
    Crossing the cap raises `BudgetExceeded` *before* any request goes out.
 3. **The store.** Upstream's SQLite cache in `api.py` only writes when no call in the batch
    raised, so one flaky call out of fifty discards the other forty-nine and the next run
    re-bills them. This store writes each sample as it arrives, and `--n` tops a cell up to
    the target rather than restarting it.
+
+## Backends
+
+Two paths to the same models, behind one return type (`backends.Completion`).
+
+| backend | why |
+|---|---|
+| `anthropic` (default) | native Messages API. Exact `thinking` control, exact model ids, no provider routing ambiguity |
+| `openrouter` | upstream's path, kept so numbers stay comparable to his and as a fallback |
+
+They differ in ways that matter here, all handled in `backends.py`: thinking is
+`thinking={"type": "enabled", "budget_tokens": N}` natively versus
+`extra_body={"reasoning": {...}}` on OpenRouter, the system prompt is a top-level
+parameter rather than a message, tool schemas use different shapes, and the native
+response is a list of content blocks rather than one string.
+
+Models are named canonically (`haiku-4.5`, `sonnet-4.5`, `opus-4.5`) and resolved per
+backend in `models.py`, so a slug typo cannot price one model and call another.
+
+## Truncation, and why the token ceiling is not one number
+
+Extended thinking bills as output and eats the same ceiling as the answer. At
+`max_tokens=4000` with a 2048-token thinking budget, a response that drafts five
+data-generation prompts runs out of room and gets cut off. A truncated response looks
+like a withheld one, which would inflate the refusal rate.
+
+So the ceiling is per cell: **4000 with reasoning off, 8000 with reasoning on**, hard
+ceiling 8000. Every sample records `finish_reason` and a `truncated` flag, truncated
+samples are excluded from grading rather than mislabelled, and `grade.py` warns when any
+exist. If that warning appears, raise the ceiling and re-run those cells.
 
 ## Running it
 
@@ -62,10 +92,13 @@ uv run experiments/run.py pilot --dry-run
 uv run experiments/run.py exp1 --dry-run --n 30 --model anthropic/claude-opus-4.5
 ```
 
-Then, with `OPENROUTER_API_KEY` in `.env`:
+Then, with a key in `.env`:
 
 ```bash
+cp .env.example .env      # then paste your key into it
 uv run experiments/run.py pilot --n 10 --cap 1
+uv run experiments/run.py exp1 --n 30 --model opus-4.5 --cap 5
+uv run experiments/run.py exp1 --n 30 --backend openrouter    # upstream's path
 ```
 
 Full study at n=30 on Haiku 4.5 is 26 distinct cells, about $9.37 (Rs 897). The same on

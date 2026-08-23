@@ -107,3 +107,24 @@ def test_a_duplicate_verdict_does_not_double_count(tmp_path):
 
 def test_format_rates_handles_an_empty_table():
     assert "no grades yet" in format_rates({})
+
+
+def test_truncated_samples_are_not_graded(tmp_path):
+    """A cut-off response would grade as a false refusal."""
+    runs, grades = tmp_path / "runs.jsonl", tmp_path / "grades.jsonl"
+    good, cut = _run(0), _run(1)
+    cut["truncated"] = True
+    _write(runs, [good, cut])
+
+    assert [r["index"] for r in ungraded(runs, grades)] == [0]
+
+
+def test_truncated_samples_are_reported_separately(tmp_path):
+    from safety_refusals.grading import truncated
+
+    runs = tmp_path / "runs.jsonl"
+    cut = _run(1)
+    cut["truncated"] = True
+    _write(runs, [_run(0), cut])
+
+    assert [r["index"] for r in truncated(runs)] == [1]

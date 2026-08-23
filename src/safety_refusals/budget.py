@@ -14,22 +14,31 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
+from safety_refusals.models import MODELS, resolve
+
 USD_TO_INR = 95.75  # spot, 2026-08-21. Update when it drifts.
 
-#: model slug -> (input USD/MTok, output USD/MTok)
+#: every accepted model spelling -> (input USD/MTok, output USD/MTok)
 PRICES: dict[str, tuple[float, float]] = {
-    "anthropic/claude-opus-4.5": (5.0, 25.0),
-    "anthropic/claude-sonnet-4.5": (3.0, 15.0),
-    "anthropic/claude-haiku-4.5": (1.0, 5.0),
+    alias: (spec.price_in, spec.price_out)
+    for spec in MODELS.values()
+    for alias in (spec.canonical, spec.anthropic_id, spec.openrouter_slug)
 }
 
 #: Measured from the assembled prompts: system 1074 + ticket 657 + tool schemas ~400.
 DEFAULT_INPUT_TOKENS = 2200
-#: Reasoning tokens bill as output, so a reasoning-on cell costs about double.
-DEFAULT_OUTPUT_TOKENS = {False: 1500, True: 3000}
+#: Thinking tokens bill as output, so a reasoning-on cell costs several times more.
+DEFAULT_OUTPUT_TOKENS = {False: 1500, True: 4000}
 
-#: Never send a request that can generate more than this unless explicitly overridden.
-MAX_TOKENS_CAP = 4000
+#: Hard ceiling on output tokens. Upstream's default is 16000, a roughly four-fold tail.
+MAX_TOKENS_CAP = 8000
+#: Per-cell default. Reasoning-on cells need room for thinking AND an answer, or the
+#: response truncates and the sample cannot be graded honestly.
+DEFAULT_MAX_TOKENS = {False: 4000, True: 8000}
+
+
+def default_max_tokens(reasoning: bool) -> int:
+    return DEFAULT_MAX_TOKENS[reasoning]
 
 
 class BudgetExceeded(RuntimeError):
@@ -37,11 +46,9 @@ class BudgetExceeded(RuntimeError):
 
 
 def price_of(model: str) -> tuple[float, float]:
-    if model not in PRICES:
-        raise KeyError(
-            f"No price for {model!r}. Add it to PRICES rather than guessing at runtime."
-        )
-    return PRICES[model]
+    """Price by canonical name, Anthropic id, or OpenRouter slug. Unknown names raise."""
+    spec = resolve(model)
+    return spec.price_in, spec.price_out
 
 
 def cost_usd(model: str, input_tokens: int, output_tokens: int) -> float:
@@ -101,9 +108,18 @@ class Ledger:
         self.lines.append((label, usd))
 
     def record_responses(self, label: str, model: str, responses: list) -> float:
-        """Record real spend from API response `usage` blocks. Returns the batch cost."""
+        """Record real spend from token counts on the responses. Returns the batch cost.
+
+        Accepts either a normalised `Completion` (token counts on the object) or a raw
+        OpenAI-shaped response (token counts under `.usage`).
+        """
         input_tokens = output_tokens = 0
         for r in responses:
+            direct_in = getattr(r, "prompt_tokens", None)
+            if direct_in is not None:
+                input_tokens += direct_in or 0
+                output_tokens += getattr(r, "completion_tokens", 0) or 0
+                continue
             usage = getattr(r, "usage", None)
             if usage is None:
                 continue

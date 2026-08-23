@@ -15,13 +15,13 @@ import argparse
 import asyncio
 import sys
 
-from safety_refusals.budget import PRICES
-from safety_refusals.grading import JUDGE_MODEL, format_rates, grade_all, rates
+from safety_refusals.grading import JUDGE_MODEL, format_rates, grade_all, rates, truncated
+from safety_refusals.models import choices
 
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    p.add_argument("--model", default=JUDGE_MODEL, choices=sorted(PRICES), help="judge model")
+    p.add_argument("--model", default=JUDGE_MODEL, choices=choices(), help="judge model")
     p.add_argument("--cap", type=float, default=1.0, help="hard spend cap for grading, USD")
     p.add_argument("--dry-run", action="store_true", help="count and price it, send nothing")
     p.add_argument("--report-only", action="store_true", help="print existing rates, grade nothing")
@@ -34,13 +34,17 @@ async def main(argv: list[str] | None = None) -> int:
     if not args.report_only:
         client = None
         if not args.dry_run:
-            from safety_refusals.api import get_openrouter_client
+            from safety_refusals.backends import get_anthropic_client
 
-            client = get_openrouter_client()
+            client = get_anthropic_client()
         await grade_all(client, model=args.model, cap_usd=args.cap, dry_run=args.dry_run)
 
     print()
     print(format_rates(rates()))
+    cut = truncated()
+    if cut:
+        print(f"\n  WARNING: {len(cut)} stored samples were truncated and are excluded "
+              f"from grading. Raise max_tokens and re-run those cells.")
     return 0
 
 

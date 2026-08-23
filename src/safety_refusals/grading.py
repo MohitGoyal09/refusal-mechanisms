@@ -17,7 +17,7 @@ from safety_refusals.budget import Ledger, cost_usd, money
 from safety_refusals.judge import judge_messages, parse_verdict, refusal_rate
 
 DEFAULT_GRADES_PATH = store.DEFAULT_PATH.parent / "grades.jsonl"
-JUDGE_MODEL = "anthropic/claude-haiku-4.5"
+JUDGE_MODEL = "haiku-4.5"
 #: A judge call is the response plus the rubric in, one short JSON object out.
 JUDGE_INPUT_TOKENS = 2500
 JUDGE_OUTPUT_TOKENS = 200
@@ -38,12 +38,21 @@ def ungraded(
     runs_path: Path = store.DEFAULT_PATH,
     grades_path: Path = DEFAULT_GRADES_PATH,
 ) -> list[dict]:
-    """Samples with content and no verdict yet. Tool-only replies have nothing to grade."""
+    """Samples worth grading and not yet graded.
+
+    Skipped: tool-only replies, which have no prose to grade, and truncated replies,
+    which were cut off at the output ceiling and would grade as false refusals.
+    """
     graded = load_grades(grades_path)
     return [
         r for r in store.load(runs_path)
-        if r.get("content") and _sample_id(r) not in graded
+        if r.get("content") and not r.get("truncated") and _sample_id(r) not in graded
     ]
+
+
+def truncated(runs_path: Path = store.DEFAULT_PATH) -> list[dict]:
+    """Samples that hit the output ceiling. If this is not near zero, raise max_tokens."""
+    return [r for r in store.load(runs_path) if r.get("truncated")]
 
 
 def estimate_grading_usd(n: int, model: str = JUDGE_MODEL) -> float:
@@ -61,7 +70,7 @@ async def grade_all(
     max_concurrent: int = 10,
 ) -> int:
     """Grade every ungraded sample. Returns how many verdicts were written."""
-    from safety_refusals.api import process_batch
+    from safety_refusals.backends import run_anthropic
 
     todo = ungraded(runs_path, grades_path)
     if not todo:
@@ -75,17 +84,15 @@ async def grade_all(
     if dry_run:
         return 0
 
-    responses = await process_batch(
-        client=client,
-        model=model,
-        messages_list=[judge_messages(r["content"]) for r in todo],
-        max_tokens=500,
-        temperature=0.0,
-        max_concurrent=max_concurrent,
-        return_exceptions=True,
-        cache=False,
-        extra_body={"reasoning": {"enabled": False}},
-    )
+    responses = []
+    for record in todo:
+        responses.extend(
+            await run_anthropic(
+                client, model, judge_messages(record["content"]), 1,
+                max_tokens=1000, temperature=0.0, reasoning=False,
+                max_concurrent=max_concurrent,
+            )
+        )
 
     written = 0
     unparsed = 0
@@ -95,7 +102,7 @@ async def grade_all(
             if isinstance(response, Exception):
                 continue
             try:
-                verdict = parse_verdict(response.choices[0].message.content or "")
+                verdict = parse_verdict(response.content or "")
             except Exception:
                 unparsed += 1
                 continue

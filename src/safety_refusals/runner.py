@@ -13,15 +13,20 @@ from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
 
 from safety_refusals import store
+from safety_refusals.backends import BACKENDS, Completion
 from safety_refusals.budget import (
     MAX_TOKENS_CAP,
     BudgetExceeded,
     Ledger,
+    default_max_tokens,
     estimate_usd,
     money,
 )
 from safety_refusals.conditions import Condition, build_messages
+from safety_refusals.models import resolve
 from safety_refusals.prompts import TOOLS
+
+DEFAULT_BACKEND = "anthropic"
 
 
 @dataclass(frozen=True)
@@ -66,19 +71,20 @@ def format_plan(plans: list[CellPlan]) -> str:
     return "\n".join(rows)
 
 
-def _record(cond: Condition, model: str, index: int, response) -> dict:
-    choice = response.choices[0]
-    usage = getattr(response, "usage", None)
+def _record(cond: Condition, model: str, index: int, c: Completion, backend: str) -> dict:
     return {
         "condition": cond.name,
         "model": model,
+        "backend": backend,
         "reasoning": cond.reasoning,
         "index": index,
-        "content": choice.message.content,
-        "tool_calls": [t.model_dump() for t in (choice.message.tool_calls or [])],
-        "finish_reason": choice.finish_reason,
-        "prompt_tokens": getattr(usage, "prompt_tokens", None),
-        "completion_tokens": getattr(usage, "completion_tokens", None),
+        "content": c.content,
+        "thinking": c.thinking,
+        "tool_calls": c.tool_calls,
+        "finish_reason": c.finish_reason,
+        "truncated": c.truncated,
+        "prompt_tokens": c.prompt_tokens,
+        "completion_tokens": c.completion_tokens,
         "created_at": datetime.now(timezone.utc).isoformat(),
         "valence": str(cond.valence),
         "names": str(cond.names),
@@ -96,19 +102,22 @@ async def run_cell(
     ledger: Ledger,
     *,
     dry_run: bool = False,
-    max_tokens: int = MAX_TOKENS_CAP,
+    backend: str = DEFAULT_BACKEND,
+    max_tokens: int | None = None,
     path=store.DEFAULT_PATH,
-    max_concurrent: int = 10,
+    max_concurrent: int = 8,
 ) -> list[dict]:
     """Top a cell up to n samples. Returns every sample for the cell, old and new."""
-    from safety_refusals.api import process_batch
-
+    if max_tokens is None:
+        max_tokens = default_max_tokens(cond.reasoning)
     if max_tokens > MAX_TOKENS_CAP:
         raise ValueError(
             f"max_tokens={max_tokens} exceeds the cap of {MAX_TOKENS_CAP}. Raise "
             f"MAX_TOKENS_CAP deliberately if you mean it; this guard exists because the "
-            f"upstream default of 16000 multiplies the bill roughly six-fold."
+            f"upstream default of 16000 multiplies the bill several-fold."
         )
+    if backend not in BACKENDS:
+        raise KeyError(f"Unknown backend {backend!r}. Known: {sorted(BACKENDS)}")
 
     key = store.RunKey(cond.name, model, cond.reasoning)
     need = store.missing(key, n, path)
@@ -121,17 +130,16 @@ async def run_cell(
         print(f"[dry-run] {cond.name}: would run {need} calls, {money(estimated)}")
         return store.samples_for(key, path)
 
-    messages = build_messages(cond)
-    responses = await process_batch(
-        client=client,
-        model=model,
-        messages_list=[messages] * need,
+    responses = await BACKENDS[backend](
+        client,
+        model,
+        build_messages(cond),
+        need,
         tools=TOOLS,
         max_tokens=max_tokens,
         temperature=1.0,
+        reasoning=cond.reasoning,
         max_concurrent=max_concurrent,
-        return_exceptions=True,
-        extra_body={"reasoning": {"enabled": cond.reasoning}},
     )
 
     ok = [r for r in responses if not isinstance(r, Exception)]
@@ -140,9 +148,11 @@ async def run_cell(
         print(f"  {cond.name}: {failed}/{len(responses)} calls failed, keeping the rest")
 
     offset = store.count_for(key, path)
-    store.append([_record(cond, model, offset + i, r) for i, r in enumerate(ok)], path)
+    store.append([_record(cond, model, offset + i, r, backend) for i, r in enumerate(ok)], path)
     spent = ledger.record_responses(cond.name, model, ok)
-    print(f"  {cond.name}: +{len(ok)} samples, {money(spent)} actual")
+    cut = sum(r.truncated for r in ok)
+    warning = f", {cut} TRUNCATED" if cut else ""
+    print(f"  {cond.name}: +{len(ok)} samples, {money(spent)} actual{warning}")
     return store.samples_for(key, path)
 
 
@@ -154,6 +164,7 @@ async def run_matrix(
     cap_usd: float,
     *,
     dry_run: bool = False,
+    backend: str = DEFAULT_BACKEND,
     path=store.DEFAULT_PATH,
 ) -> Ledger:
     plans = plan_matrix(conditions, model, n, path)
@@ -167,7 +178,10 @@ async def run_matrix(
 
     ledger = Ledger(cap_usd=cap_usd)
     for cond in conditions:
-        await run_cell(client, cond, model, n, ledger, dry_run=dry_run, path=path)
+        await run_cell(
+            client, cond, model, n, ledger,
+            dry_run=dry_run, backend=backend, path=path,
+        )
     if not dry_run:
         print("\nspend:")
         print(ledger.report())
