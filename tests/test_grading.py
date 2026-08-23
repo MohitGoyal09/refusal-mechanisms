@@ -189,3 +189,18 @@ def test_a_later_verdict_supersedes_an_earlier_one(tmp_path):
     _write(grades, [_grade(0, 3), _grade(0, 0)])
 
     assert load_grades(grades)[("cell_a", "anthropic/claude-haiku-4.5", False, 0)]["grade"] == 0
+
+
+def test_the_rates_table_names_the_model(tmp_path):
+    """The same cell on two models is two results; a table without the model lies."""
+    from safety_refusals.grading import format_rates
+
+    grades = tmp_path / "grades.jsonl"
+    haiku, opus = _grade(0, 0), _grade(0, 3)
+    opus["model"] = "claude-opus-4-5"
+    _write(grades, [haiku, opus])
+
+    out = format_rates(rates(grades))
+
+    assert "haiku-4.5" in out
+    assert "opus-4.5" in out

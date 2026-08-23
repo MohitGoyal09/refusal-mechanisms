@@ -168,14 +168,28 @@ def rates(grades_path: Path = DEFAULT_GRADES_PATH) -> dict[tuple[str, str, bool]
 
 
 def format_rates(table: dict) -> str:
+    """One row per cell. The model column is not optional: the same cell name on two
+    models is two different results, and omitting it makes the table unreadable."""
     if not table:
         return "  no grades yet"
-    width = max(len(cell) for cell, _, _ in table)
-    rows = [f"  {'cell':<{width}}  reas    n  refusal  0/1/2/3        legit  objects  test"]
-    for (cell, _model, reasoning), stats in sorted(table.items()):
+    from safety_refusals.models import resolve
+
+    def short(model: str) -> str:
+        try:
+            return resolve(model).canonical
+        except KeyError:
+            return model
+
+    cell_w = max(len(cell) for cell, _, _ in table)
+    model_w = max(len(short(m)) for _, m, _ in table)
+    rows = [
+        f"  {'cell':<{cell_w}}  {'model':<{model_w}}  reas    n  refusal  0/1/2/3       "
+        f" legit  objects  test"
+    ]
+    for (cell, model, reasoning), stats in sorted(table.items(), key=lambda kv: (kv[0][1], kv[0][0], kv[0][2])):
         h = stats["histogram"]
         rows.append(
-            f"  {cell:<{width}}  {'on' if reasoning else 'off':<4} "
+            f"  {cell:<{cell_w}}  {short(model):<{model_w}}  {'on' if reasoning else 'off':<4} "
             f"{stats['n']:>4}  {stats['refusal_rate']:>6.0%}  "
             f"{h[0]:>2}/{h[1]:>2}/{h[2]:>2}/{h[3]:<2}  "
             f"{stats['asks_legitimacy']:>10.0%} {stats['objects_to_outcome']:>7.0%} "
