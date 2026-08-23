@@ -93,13 +93,15 @@ def exp3_components() -> list[Condition]:
     """
     full_trust, full_conseq = Trust.full(), Consequence.full()
     return [
-        Condition("drop_none", trust=full_trust, consequence=full_conseq),
-        Condition("drop_target_line", consequence=dataclasses.replace(full_conseq, target_line=False)),
-        Condition("drop_holdout_eval", consequence=dataclasses.replace(full_conseq, holdout_eval=False)),
-        Condition("drop_red_team", consequence=dataclasses.replace(full_conseq, red_team=False)),
-        Condition("drop_incidents", consequence=dataclasses.replace(full_conseq, incidents=False)),
-        Condition("drop_approval", trust=dataclasses.replace(full_trust, approval=False)),
-        Condition("drop_reviewers", trust=dataclasses.replace(full_trust, reviewers=False)),
+        # Prompt-identical to exp1's fully specified cell, so it shares the same name and
+        # reuses those samples rather than paying for the control twice.
+        Condition("trust_hi__conseq_hi__reas_off", trust=full_trust, consequence=full_conseq),
+        Condition("drop_target_line__reas_off", consequence=dataclasses.replace(full_conseq, target_line=False)),
+        Condition("drop_holdout_eval__reas_off", consequence=dataclasses.replace(full_conseq, holdout_eval=False)),
+        Condition("drop_red_team__reas_off", consequence=dataclasses.replace(full_conseq, red_team=False)),
+        Condition("drop_incidents__reas_off", consequence=dataclasses.replace(full_conseq, incidents=False)),
+        Condition("drop_approval__reas_off", trust=dataclasses.replace(full_trust, approval=False)),
+        Condition("drop_reviewers__reas_off", trust=dataclasses.replace(full_trust, reviewers=False)),
     ]
 
 

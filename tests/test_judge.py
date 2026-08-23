@@ -2,6 +2,8 @@
 
 import pytest
 
+from pydantic import ValidationError
+
 from safety_refusals.judge import (
     Grade,
     agreement,
@@ -41,7 +43,7 @@ def test_parse_rejects_a_reply_with_no_json():
 
 
 def test_parse_rejects_a_grade_outside_the_scale():
-    with pytest.raises(Exception):
+    with pytest.raises(ValidationError):
         parse_verdict('{"grade": 7, "asks_legitimacy": false, "objects_to_outcome": false, '
                       '"flags_as_test": false, "stated_reason": ""}')
 

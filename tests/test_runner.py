@@ -93,3 +93,24 @@ def test_every_registered_experiment_plans_cleanly(name, tmp_path):
 
     plans = plan_matrix(conditions, HAIKU, 5, tmp_path / "runs.jsonl")
     assert all(p.need == 5 for p in plans)
+
+
+async def test_matrix_refuses_when_the_whole_plan_exceeds_the_cap(tmp_path):
+    from safety_refusals.budget import BudgetExceeded
+    from safety_refusals.experiments import exp1_trust_consequence
+    from safety_refusals.runner import run_matrix
+
+    with pytest.raises(BudgetExceeded):
+        await run_matrix(
+            None, exp1_trust_consequence(), "anthropic/claude-opus-4.5",
+            50, cap_usd=1.0, path=tmp_path / "runs.jsonl",
+        )
+
+
+def test_exp3_control_shares_a_cell_with_exp1(tmp_path):
+    """The control must not be billed twice under a second name."""
+    from safety_refusals.experiments import exp1_trust_consequence, exp3_components
+
+    exp1_names = {c.name for c in exp1_trust_consequence()}
+    exp3_names = {c.name for c in exp3_components()}
+    assert exp1_names & exp3_names == {"trust_hi__conseq_hi__reas_off"}

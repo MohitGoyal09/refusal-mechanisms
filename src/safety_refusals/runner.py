@@ -9,12 +9,13 @@ Three invariants:
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
 
 from safety_refusals import store
 from safety_refusals.budget import (
     MAX_TOKENS_CAP,
+    BudgetExceeded,
     Ledger,
     estimate_usd,
     money,
@@ -82,8 +83,8 @@ def _record(cond: Condition, model: str, index: int, response) -> dict:
         "valence": str(cond.valence),
         "names": str(cond.names),
         "system_prompt": str(cond.system_prompt),
-        "trust": cond.trust.__dict__,
-        "consequence": cond.consequence.__dict__,
+        "trust": asdict(cond.trust),
+        "consequence": asdict(cond.consequence),
     }
 
 
@@ -159,7 +160,7 @@ async def run_matrix(
     print(format_plan(plans))
     total = sum(p.estimated_usd for p in plans)
     if total > cap_usd:
-        raise SystemExit(
+        raise BudgetExceeded(
             f"Planned spend {money(total)} exceeds the cap {money(cap_usd)}. "
             f"Lower n or raise the cap on purpose."
         )
