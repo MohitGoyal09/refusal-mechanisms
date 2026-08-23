@@ -35,7 +35,10 @@ from safety_refusals.models import resolve
 #: Extended thinking needs at least this much room to be enabled at all.
 MIN_THINKING_BUDGET = 1024
 #: Leave the model this much space for the answer after thinking.
-ANSWER_HEADROOM = 2000
+#: Sized from 340 reasoning-off Opus answers: median 678 tokens, p99 2177, max 2254.
+#: At the old 2000 the top 5% of answers truncated, concentrated in the complying cells
+#: where answers are longest, which is exactly where a truncation reads as a refusal.
+ANSWER_HEADROOM = 3000
 #: The Anthropic API default, and the value upstream sampled at.
 DEFAULT_TEMPERATURE = 1.0
 #: How many times to retry a call that could plausibly succeed later.

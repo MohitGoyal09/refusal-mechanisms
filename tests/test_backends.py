@@ -184,7 +184,8 @@ def test_reasoning_on_never_sends_a_temperature():
 
     assert "extra_body" not in request
     assert request["thinking"]["type"] == "enabled"
-    assert request["thinking"]["budget_tokens"] == 6000
+    # derived from the constants, not hardcoded, so tuning the headroom is not a test edit
+    assert request["thinking"]["budget_tokens"] == 8000 - ANSWER_HEADROOM
 
 
 def test_the_model_id_sent_is_the_native_one_not_a_slug():

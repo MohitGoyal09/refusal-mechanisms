@@ -30,11 +30,12 @@ DEFAULT_INPUT_TOKENS = 2200
 #: Thinking tokens bill as output, so a reasoning-on cell costs several times more.
 DEFAULT_OUTPUT_TOKENS = {False: 1500, True: 4000}
 
-#: Hard ceiling on output tokens. Upstream's default is 16000, a roughly four-fold tail.
-MAX_TOKENS_CAP = 8000
+#: Hard ceiling on output tokens. Upstream's default is 16000.
+MAX_TOKENS_CAP = 10000
 #: Per-cell default. Reasoning-on cells need room for thinking AND an answer, or the
-#: response truncates and the sample cannot be graded honestly.
-DEFAULT_MAX_TOKENS = {False: 4000, True: 8000}
+#: response truncates and the sample cannot be graded honestly. 4000 is ample for the
+#: answer alone: the observed p99 across 340 Opus answers is 2177 tokens.
+DEFAULT_MAX_TOKENS = {False: 4000, True: 10000}
 
 
 def default_max_tokens(reasoning: bool) -> int:
