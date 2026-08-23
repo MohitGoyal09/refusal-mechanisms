@@ -125,3 +125,80 @@ def test_openai_length_finish_reason_also_counts_as_truncated():
 def test_a_refusal_stop_reason_is_not_treated_as_truncation():
     # a hard classifier refusal is a real datapoint, not a cut-off response
     assert Completion("", "refusal", 1, 1).truncated is False
+
+
+# --- the request body must match what the installed SDK actually accepts --- #
+
+
+def _sdk_params() -> set[str]:
+    import inspect
+
+    from anthropic.resources.messages import AsyncMessages
+
+    return set(inspect.signature(AsyncMessages.create).parameters)
+
+
+def test_every_key_we_send_is_a_parameter_the_sdk_declares():
+    """Guards against the SDK dropping a parameter under us, as it did with temperature."""
+    from safety_refusals.backends import build_anthropic_request
+
+    for reasoning in (False, True):
+        request = build_anthropic_request(
+            "haiku-4.5", build_messages(Condition("c")),
+            tools=TOOLS, max_tokens=8000, reasoning=reasoning,
+        )
+        unknown = set(request) - _sdk_params()
+        assert not unknown, f"reasoning={reasoning} sends unknown keys: {unknown}"
+
+
+def test_the_sdk_no_longer_declares_temperature():
+    """If this ever fails, temperature can move out of extra_body and be passed directly."""
+    assert "temperature" not in _sdk_params()
+
+
+def test_default_temperature_is_not_sent_at_all():
+    from safety_refusals.backends import build_anthropic_request
+
+    request = build_anthropic_request("haiku-4.5", build_messages(Condition("c")))
+
+    assert "extra_body" not in request
+    assert request["thinking"] == {"type": "disabled"}
+
+
+def test_a_non_default_temperature_goes_through_extra_body():
+    from safety_refusals.backends import build_anthropic_request
+
+    request = build_anthropic_request("haiku-4.5", build_messages(Condition("c")), temperature=0.0)
+
+    assert request["extra_body"] == {"temperature": 0.0}
+
+
+def test_reasoning_on_never_sends_a_temperature():
+    """Extended thinking pins temperature to 1; sending one would 400."""
+    from safety_refusals.backends import build_anthropic_request
+
+    request = build_anthropic_request(
+        "haiku-4.5", build_messages(Condition("c")), max_tokens=8000,
+        temperature=0.0, reasoning=True,
+    )
+
+    assert "extra_body" not in request
+    assert request["thinking"]["type"] == "enabled"
+    assert request["thinking"]["budget_tokens"] == 6000
+
+
+def test_the_model_id_sent_is_the_native_one_not_a_slug():
+    from safety_refusals.backends import build_anthropic_request
+
+    request = build_anthropic_request("haiku-4.5", build_messages(Condition("c")))
+
+    assert request["model"] == "claude-haiku-4-5"
+
+
+def test_the_system_prompt_is_a_parameter_not_a_message():
+    from safety_refusals.backends import build_anthropic_request
+
+    request = build_anthropic_request("haiku-4.5", build_messages(Condition("c")))
+
+    assert "Claude Internal" in request["system"]
+    assert all(m["role"] != "system" for m in request["messages"])

@@ -13,6 +13,11 @@ The two APIs differ in ways that matter to this experiment:
   * thinking. OpenRouter takes `extra_body={"reasoning": {"enabled": bool}}`. The Claude
     4.5 family on the native API takes `thinking={"type": "enabled", "budget_tokens": N}`
     or `{"type": "disabled"}`. Budget must be at least 1024 and below max_tokens.
+  * temperature. The Anthropic SDK dropped `temperature` from the typed signature of
+    `messages.create`, because sampling controls were removed on 4.6 and later models.
+    The 4.5 family still accepts it on the wire, so a non-default temperature goes
+    through `extra_body`. The API default is already 1.0, which is what the experiment
+    samples at, so the normal path sends nothing and matches upstream exactly.
   * the system prompt is a message on OpenRouter and a top-level parameter natively.
   * tool schemas use different shapes.
   * the native response is a list of content blocks, not a single string.
@@ -31,6 +36,8 @@ from safety_refusals.models import resolve
 MIN_THINKING_BUDGET = 1024
 #: Leave the model this much space for the answer after thinking.
 ANSWER_HEADROOM = 2000
+#: The Anthropic API default, and the value upstream sampled at.
+DEFAULT_TEMPERATURE = 1.0
 
 
 @dataclass(frozen=True)
@@ -122,19 +129,16 @@ def _from_anthropic(message) -> Completion:
     )
 
 
-async def run_anthropic(
-    client,
+def build_anthropic_request(
     model: str,
     messages: list[dict],
-    n: int,
     *,
     tools: list[dict] | None = None,
     max_tokens: int = 4000,
-    temperature: float = 1.0,
+    temperature: float = DEFAULT_TEMPERATURE,
     reasoning: bool = False,
-    max_concurrent: int = 8,
-) -> list[Completion | Exception]:
-    """Sample the same prompt n times through the native Messages API."""
+) -> dict:
+    """Assemble the request body. Split out so it can be asserted without a network call."""
     system, turns = split_system(messages)
     request: dict = {
         "model": resolve(model).anthropic_id,
@@ -145,13 +149,35 @@ async def run_anthropic(
     if tools:
         request["tools"] = to_anthropic_tools(tools)
     if reasoning:
-        # Extended thinking pins temperature to 1 on this family, which is what the
-        # experiment uses anyway. Passing anything else would 400.
+        # Extended thinking pins temperature to 1, which is what the experiment samples
+        # at anyway, so temperature is never sent on this branch.
         request["thinking"] = {"type": "enabled", "budget_tokens": thinking_budget(max_tokens)}
     else:
         request["thinking"] = {"type": "disabled"}
-        request["temperature"] = temperature
+        # 1.0 is the API default; sending it explicitly would only risk a 400 on a
+        # signature that no longer declares the parameter.
+        if temperature is not None and temperature != DEFAULT_TEMPERATURE:
+            request["extra_body"] = {"temperature": temperature}
+    return request
 
+
+async def run_anthropic(
+    client,
+    model: str,
+    messages: list[dict],
+    n: int,
+    *,
+    tools: list[dict] | None = None,
+    max_tokens: int = 4000,
+    temperature: float = DEFAULT_TEMPERATURE,
+    reasoning: bool = False,
+    max_concurrent: int = 8,
+) -> list[Completion | Exception]:
+    """Sample the same prompt n times through the native Messages API."""
+    request = build_anthropic_request(
+        model, messages, tools=tools, max_tokens=max_tokens,
+        temperature=temperature, reasoning=reasoning,
+    )
     semaphore = asyncio.Semaphore(max_concurrent)
 
     async def one() -> Completion:
