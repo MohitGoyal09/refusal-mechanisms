@@ -1,6 +1,6 @@
 # Why Claude 4.5 refuses benign safety research: two mechanisms, not one
 
-SPAR Model Forensics take-home, August 2026. Mohit Goyal.
+Mohit Goyal, August 2026.
 
 A fork of [adsingh-64/safety-refusals](https://github.com/adsingh-64/safety-refusals) by Aditya Singh, whose replication and framing this builds on directly. His original README is preserved as [UPSTREAM_README.md](UPSTREAM_README.md).
 
