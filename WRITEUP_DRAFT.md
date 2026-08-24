@@ -130,15 +130,9 @@ This is the fourth independent separation of the two mechanisms, and it also rep
 
 ---
 
-## What this means for the disagreement
+## The practical upshot
 
-The two camps were describing different mechanisms and arguing as though there were one.
-
-For the prompts that generated the observation, **Anthropic's conclusion holds**: this is not misalignment. It is caution under uncertainty, and most of it is not refusal at all. But the specific mechanism they name, the model treating the prompt as an attack, is the weaker of the two drivers. The stronger driver is not suspicion of the requester. It is inability to tell what the training change will do.
-
-**UK AISI's concern is real but misattributed.** The model does hold an object-level position, it is strong, and neither reflection nor institutional authority shifts it. That disposition was not what those prompts were measuring.
-
-**The practical upshot** is that a first-turn refusal rate is not a measurement of anything until the two mechanisms are separated. They can be separated cheaply, on a single response, by three tells: whether the prompts were delivered, whether the model asked about authorisation or argued the harm, and whether reflection changes the answer.
+A first-turn refusal rate measures nothing until the two mechanisms are separated. They separate cheaply, on a single response, by three tells: whether the requested work was delivered, whether the model asked about authorisation or argued the harm, and whether letting it reason first changes the answer.
 
 ---
 
