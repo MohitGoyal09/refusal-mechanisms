@@ -38,6 +38,8 @@ His caveats, in his words, were that refusal classification is the load-bearing 
 
 **Replication first.** My composed prompt for that condition is byte-identical to his shipped `USER_PROMPT`, asserted as a test, so the numbers are directly comparable. At n=30 I measure 97% withholding where he reported 100% at n=50.
 
+Every number in this document is generated from the stored responses at build time, including the figure and the appendix table, so nothing here is transcribed by hand.
+
 ---
 
 ## Method
@@ -162,7 +164,7 @@ The SAFETY-2847 ticket, its incidents, and the internal deployment system prompt
 
 ## Reproduction
 
-Code, data and figure: 540 stored responses, 560 verdicts, and 130 tests covering prompt composition, grading, budget guards and the calibration of the mechanical check.
+Code, data and figure: **https://github.com/MohitGoyal09/refusal-mechanisms**. 540 stored responses, 560 verdicts, and 130 tests covering prompt composition, grading, budget guards and the calibration of the mechanical check.
 
 ```
 uv run experiments/run.py exp1 --reasoning off --n 30 --model opus-4.5 --dry-run
