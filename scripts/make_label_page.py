@@ -19,11 +19,29 @@ from pathlib import Path
 
 from safety_refusals.conditions import build_user_prompt, condition_from_record
 from safety_refusals.grading import gradeable_text
+from safety_refusals.reading import DOMAINS, analyse
 from safety_refusals.labels import sample_for_labelling, spot_check_set
 
 ROOT = Path(__file__).resolve().parents[1]
 TEMPLATE = ROOT / "scripts" / "label_page.html"
 OUT = ROOT / "label.html"
+
+
+def _reading(text: str) -> dict:
+    """Split the response for reading and attach the mechanical signals."""
+    s = analyse(text)
+    return {
+        "head": s.head,
+        "middle": s.middle,
+        "tail": s.tail,
+        "chars": s.length,
+        "domains": list(s.domains),
+        "missing": list(s.missing),
+        "ends_on_question": s.ends_on_question,
+        "hint": s.hint,
+        "looks_drafted": s.looks_drafted,
+        "all_domains": [d for d, _ in DOMAINS],
+    }
 
 
 def main() -> int:
@@ -53,8 +71,7 @@ def main() -> int:
             "index": r["index"],
             # Rebuilt from the stored axis settings by the same code that sent it.
             "request": build_user_prompt(condition_from_record(r)),
-            "response": gradeable_text(r),
-            "chars": len(gradeable_text(r)),
+            **_reading(gradeable_text(r)),
             "tool_call": bool(r.get("tool_calls")),
         }
         for r in batch

@@ -120,6 +120,18 @@
   .cta:hover { filter: brightness(1.08); }
   pre.cmd { text-align: left; font-family: var(--mono); font-size: 12.5px; background: var(--paper-raised); border: 1px solid var(--rule); border-radius: 8px; padding: 13px 15px; overflow-x: auto; color: var(--ink-soft); }
   .hint { font-size: 12px; color: var(--ink-faint); }
+  .signal { padding: 13px 20px; border-bottom: 1px solid var(--rule); background: color-mix(in oklab, var(--accent-soft) 55%, transparent); }
+  .signal p { margin: 0; font: 600 13.5px/1.45 var(--sans); color: var(--ink); }
+  .signal .chips { display: flex; gap: 5px; flex-wrap: wrap; margin-top: 9px; }
+  .chip { font: 500 11px/1 var(--sans); padding: 4px 8px; border-radius: 20px; border: 1px solid var(--rule); color: var(--ink-soft); background: var(--paper-raised); }
+  .chip.on { color: var(--ok); border-color: color-mix(in oklab, var(--ok) 45%, var(--rule)); }
+  .chip.off { color: var(--ink-faint); text-decoration: line-through; }
+  .fold { display: block; width: 100%; margin: 12px 0; padding: 9px; border-radius: 7px;
+          border: 1px dashed var(--rule); background: none; color: var(--ink-faint);
+          font: 500 12px var(--sans); cursor: pointer; }
+  .fold:hover { border-color: var(--accent); color: var(--accent); }
+  .seam { margin: 6px 0 2px; font: 600 10.5px/1 var(--sans); letter-spacing: .08em;
+          text-transform: uppercase; color: var(--ink-faint); }
   .fallback { max-width: 620px; margin: 48px auto; text-align: center; }
   .fallback h2 { font: 600 20px/1.25 var(--sans); margin: 0 0 10px; color: var(--accent); }
   .fallback p { color: var(--ink-soft); margin: 0 0 16px; }
@@ -215,8 +227,7 @@ function render() {
   document.getElementById("count").textContent =
     `${state.at + 1} of ${ITEMS.length}  ·  ${labelled} labelled`;
 
-  const full = state.showFull || item.response.length <= CUT;
-  const shown = full ? item.response : item.response.slice(0, CUT);
+  const full = state.showFull || item.middle === "";
 
   main.innerHTML = `
     <div class="grid">
@@ -225,17 +236,31 @@ function render() {
         <div class="body request">${esc(item.request)}</div>
       </section>
       <section class="panel">
-        <h2>The response <span class="hint">grade only this</span></h2>
-        <table class="meta">
-          <tr><td>length</td><td><b>${item.chars.toLocaleString()}</b> characters</td></tr>
-          <tr><td>delivered by tool call</td><td><b>${item.tool_call ? "yes, payload included below" : "no"}</b></td></tr>
-        </table>
-        <div class="body response">${esc(shown)}${full ? "" :
-          `<div class="cut">Showing the first ${CUT.toLocaleString()} of ${item.chars.toLocaleString()} characters. Press <b>f</b> to see all of it before deciding &mdash; the prompts may be drafted further down.</div>`}</div>
+        <h2>The response <span class="hint">start and end shown, middle folded</span></h2>
+        <div class="signal">
+          <p>${esc(item.hint)}</p>
+          <div class="chips">
+            ${item.all_domains.map(d => `<span class="chip ${item.domains.includes(d) ? "on" : "off"}">${d}</span>`).join("")}
+            <span class="chip">${item.chars.toLocaleString()} chars</span>
+            ${item.tool_call ? `<span class="chip">via tool call</span>` : ""}
+            ${item.ends_on_question ? `<span class="chip">ends on a question</span>` : ""}
+          </div>
+        </div>
+        <div class="body response">${body(item, full)}</div>
       </section>
     </div>`;
   footer.style.display = "";
   renderChoices();
+}
+
+function body(item, full) {
+  if (!item.middle) return esc(item.head) + esc(item.tail);
+  if (full) return esc(item.head) + esc(item.middle) + esc(item.tail);
+  return esc(item.head)
+    + `<button class="fold" data-act="full">`
+    + `&darr; ${item.middle.length.toLocaleString()} characters hidden. `
+    + `Click or press f to read the middle.</button>`
+    + `<div class="seam">how it ends</div>` + esc(item.tail);
 }
 
 function renderChoices() {
