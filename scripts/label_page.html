@@ -120,6 +120,10 @@
   .cta:hover { filter: brightness(1.08); }
   pre.cmd { text-align: left; font-family: var(--mono); font-size: 12.5px; background: var(--paper-raised); border: 1px solid var(--rule); border-radius: 8px; padding: 13px 15px; overflow-x: auto; color: var(--ink-soft); }
   .hint { font-size: 12px; color: var(--ink-faint); }
+  .fallback { max-width: 620px; margin: 48px auto; text-align: center; }
+  .fallback h2 { font: 600 20px/1.25 var(--sans); margin: 0 0 10px; color: var(--accent); }
+  .fallback p { color: var(--ink-soft); margin: 0 0 16px; }
+  .fallback code { font-family: var(--mono); font-size: 12.5px; }
 </style>
 </head>
 <body>
@@ -129,7 +133,19 @@
   <div class="count" id="count"></div>
 </header>
 
-<main id="main"></main>
+<main id="main">
+  <div class="fallback" id="fallback">
+    <h2>JavaScript did not run</h2>
+    <p>This page builds itself with JavaScript, so a static preview shows nothing. Open it in
+       a real browser instead of an in-app preview pane:</p>
+    <pre class="cmd">cd ~/Code/safety-refusals
+python3 -m http.server 8765 &amp;
+open http://localhost:8765/label.html</pre>
+    <p class="hint">Serving over http rather than opening the file directly also avoids
+       browsers that block local storage on <code>file://</code>, which is what remembers
+       your progress.</p>
+  </div>
+</main>
 
 <footer id="footer">
   <div class="choices" id="choices"></div>
@@ -168,7 +184,22 @@ function load() {
   } catch (e) { /* fall through to a fresh start */ }
   return { seed: SEED, total: ITEMS.length, at: 0, labels: {}, skipped: {}, showFull: false };
 }
-function save() { localStorage.setItem(KEY, JSON.stringify(state)); }
+function save() {
+  // Safari refuses local storage on file:// URLs. Losing progress memory is survivable;
+  // losing the ability to label is not.
+  try { localStorage.setItem(KEY, JSON.stringify(state)); } catch (e) { storageBroken(); }
+}
+let warned = false;
+function storageBroken() {
+  if (warned) return;
+  warned = true;
+  const el = document.createElement("div");
+  el.className = "cut";
+  el.style.cssText = "position:fixed;top:56px;right:16px;z-index:20;max-width:300px";
+  el.textContent = "This browser blocks local storage here, so a refresh will lose your "
+    + "progress. Finish in one sitting, or serve the page over http instead.";
+  document.body.appendChild(el);
+}
 
 function decided() { return Object.keys(state.labels).length + Object.keys(state.skipped).length; }
 
@@ -294,7 +325,17 @@ function esc(s) {
   return String(s).replace(/[&<>]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c]));
 }
 
-render();
+try {
+  if (!Array.isArray(ITEMS) || ITEMS.length === 0) throw new Error("no samples embedded in this page");
+  document.getElementById("fallback").remove();
+  render();
+} catch (err) {
+  document.getElementById("footer").style.display = "none";
+  document.getElementById("main").innerHTML =
+    '<div class="fallback"><h2>Could not start</h2><p>' + String(err.message) +
+    '</p><p class="hint">Regenerate the page with '
+    + '<code>uv run scripts/make_label_page.py</code> and reopen it.</p></div>';
+}
 </script>
 </body>
 </html>
