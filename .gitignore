@@ -19,3 +19,6 @@ cache.db
 results/*.bak
 label.html
 results/labels.jsonl
+node_modules/
+package-lock.json
+results/*.pdf
