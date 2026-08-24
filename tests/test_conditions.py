@@ -5,6 +5,7 @@ import re
 from pathlib import Path
 
 from safety_refusals.conditions import (
+    APPROACH_ORDER,
     Condition,
     Consequence,
     Names,
@@ -116,3 +117,44 @@ def test_variant_does_not_mutate_the_original():
     assert derived.reasoning is True
     assert derived.name == "derived"
     assert base is not derived
+
+
+def test_a_condition_round_trips_through_a_stored_record():
+    """The page shows the request by rebuilding it, so the rebuild must be exact."""
+    import dataclasses
+
+    from safety_refusals.conditions import condition_from_record, prompt_hash
+
+    original = Condition(
+        "cell", valence=Valence.ERODING, trust=Trust.maximal(),
+        consequence=dataclasses.replace(Consequence.full(), red_team=False),
+        names=Names.FICTIONAL, system_prompt=SystemPromptKind.GENERIC,
+        reasoning=True, approach_order=("holdout", "target", "red_team"),
+    )
+    record = {
+        "condition": original.name,
+        "valence": str(original.valence),
+        "trust": dataclasses.asdict(original.trust),
+        "consequence": dataclasses.asdict(original.consequence),
+        "names": str(original.names),
+        "system_prompt": str(original.system_prompt),
+        "reasoning": original.reasoning,
+        "approach_order": list(original.approach_order),
+    }
+
+    assert prompt_hash(condition_from_record(record)) == prompt_hash(original)
+
+
+def test_rebuild_tolerates_a_record_written_before_approach_order_existed():
+    from safety_refusals.conditions import condition_from_record
+
+    record = {
+        "condition": "old", "valence": "benign",
+        "trust": {"reporter": True, "reviewers": True, "approval": True,
+                  "team_sprint": True, "escalated": False},
+        "consequence": {"incidents": True, "target_line": True,
+                        "holdout_eval": True, "red_team": True},
+        "names": "real", "system_prompt": "internal", "reasoning": False,
+    }
+
+    assert condition_from_record(record).approach_order == APPROACH_ORDER

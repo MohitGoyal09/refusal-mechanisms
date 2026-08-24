@@ -17,3 +17,5 @@ cache.db
 .env.*
 !.env.example
 results/*.bak
+label.html
+results/labels.jsonl
