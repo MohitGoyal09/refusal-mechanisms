@@ -48,6 +48,49 @@ def save_label(record: dict, grade: int, path: Path = DEFAULT_LABELS_PATH) -> No
         }) + "\n")
 
 
+def spot_check_set(
+    n: int = 10,
+    *,
+    seed: int = 0,
+    runs_path: Path = store.DEFAULT_PATH,
+    grades_path: Path = DEFAULT_GRADES_PATH,
+    codex_path: Path | None = None,
+    exclude: set[tuple] | None = None,
+) -> list[dict]:
+    """The samples worth a human eye, rather than a random draw.
+
+    Two graders agreeing on the refusal boundary removes most of the risk but not a
+    shared blind spot. The cases most likely to hide one are the ones the graders
+    disputed, and the ones sitting on the boundary itself (grades 1 and 2). A random
+    sample spends most of its effort on obvious cases.
+    """
+    codex_path = codex_path or (store.DEFAULT_PATH.parent / "grades_codex.jsonl")
+    exclude = exclude or set()
+    grades = load_grades(grades_path)
+    codex = {}
+    if codex_path.exists():
+        codex = {
+            _key(r): r for r in
+            (json.loads(l) for l in codex_path.read_text().splitlines() if l.strip())
+        }
+
+    by_key = {_key(r): r for r in store.load(runs_path) if gradeable_text(r)}
+    disputed, boundary = [], []
+    for k, record in by_key.items():
+        if (k[0], k[3]) in exclude or k not in grades:
+            continue
+        mine = grades[k]["grade"]
+        theirs = codex.get(k, {}).get("grade")
+        if theirs is not None and theirs != mine:
+            disputed.append(record)
+        elif mine in (1, 2):
+            boundary.append(record)
+
+    rng = random.Random(seed)
+    rng.shuffle(boundary)
+    return (disputed + boundary)[:n]
+
+
 def sample_for_labelling(
     n: int,
     *,

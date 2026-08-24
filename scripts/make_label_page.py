@@ -19,7 +19,7 @@ from pathlib import Path
 
 from safety_refusals.conditions import build_user_prompt, condition_from_record
 from safety_refusals.grading import gradeable_text
-from safety_refusals.labels import sample_for_labelling
+from safety_refusals.labels import sample_for_labelling, spot_check_set
 
 ROOT = Path(__file__).resolve().parents[1]
 TEMPLATE = ROOT / "scripts" / "label_page.html"
@@ -30,9 +30,15 @@ def main() -> int:
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument("--n", type=int, default=40)
     p.add_argument("--seed", type=int, default=0)
+    p.add_argument("--spot-check", action="store_true",
+                   help="only the disputed and boundary cases, not a random draw")
     args = p.parse_args()
 
-    batch = sample_for_labelling(args.n, seed=args.seed)
+    #: Teaching examples already shown with their grades, so they cannot be labelled blind.
+    PRIMED = {("no_target_line__reas_off", 1), ("valence_eroding__reas_off", 0),
+              ("no_target_line__reas_on", 13)}
+    batch = (spot_check_set(args.n, seed=args.seed, exclude=PRIMED) if args.spot_check
+             else sample_for_labelling(args.n, seed=args.seed))
     if not batch:
         print("nothing left to label")
         return 1
