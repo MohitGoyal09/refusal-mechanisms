@@ -2,6 +2,8 @@
 
 Mohit Goyal · SPAR Model Forensics take-home · August 2026
 
+Time spent: about 4 hours hands-on. Experiment execution and grading ran unattended and are not counted.
+
 ---
 
 ## Executive summary
