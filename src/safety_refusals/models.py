@@ -34,6 +34,11 @@ MODELS: dict[str, ModelSpec] = {
     "haiku-4.5": ModelSpec("haiku-4.5", "claude-haiku-4-5", "anthropic/claude-haiku-4.5", 1.0, 5.0),
     "sonnet-4.5": ModelSpec("sonnet-4.5", "claude-sonnet-4-5", "anthropic/claude-sonnet-4.5", 3.0, 15.0),
     "opus-4.5": ModelSpec("opus-4.5", "claude-opus-4-5", "anthropic/claude-opus-4.5", 5.0, 25.0),
+    # Open-weight models, OpenRouter only (no anthropic_id). Added for the MATS Neel
+    # Nanda application: does the two-mechanism split replicate outside Claude?
+    # Prices verified 2026-08-25 against openrouter.ai model pages.
+    "llama-3.3-70b": ModelSpec("llama-3.3-70b", "", "meta-llama/llama-3.3-70b-instruct", 0.10, 0.32),
+    "qwen-2.5-72b": ModelSpec("qwen-2.5-72b", "", "qwen/qwen-2.5-72b-instruct", 0.36, 0.40),
 }
 
 #: every accepted spelling -> spec
